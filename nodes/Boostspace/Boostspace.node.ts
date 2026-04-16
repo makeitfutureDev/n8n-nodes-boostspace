@@ -8,7 +8,7 @@ import type {
 	INodeTypeDescription,
 	IHttpRequestMethods,
 } from 'n8n-workflow';
-import { NodeConnectionTypes } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import {
 	boostspaceApiRequest,
@@ -16,7 +16,9 @@ import {
 	customFieldsToApiFormat,
 	flattenCustomFields,
 	formatBulkRecords,
+	mapFieldType,
 	parseCustomFieldsInput,
+	parseDateFields,
 	processBulkResponse,
 } from './GenericFunctions';
 
@@ -117,10 +119,12 @@ export class Boostspace implements INodeType {
 
 			async getCustomFieldInputs(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const response = await boostspaceApiRequest.call(this, 'GET', '/api/custom-field/input');
-				return (response as IDataObject[]).map((item: IDataObject) => ({
-					name: `${item.name} (ID: ${item.id})`,
-					value: item.id as number,
-				}));
+				return (response as IDataObject[])
+					.filter((item: IDataObject) => item.protected === false)
+					.map((item: IDataObject) => ({
+						name: `${item.name} (ID: ${item.id})`,
+						value: item.id as number,
+					}));
 			},
 
 			async getElementGroups(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
@@ -141,10 +145,12 @@ export class Boostspace implements INodeType {
 					qs.spaces = spaceId;
 				}
 				const response = await boostspaceApiRequest.call(this, 'GET', '/api/custom-field/by-space', {}, qs);
-				return (response as IDataObject[]).map((item: IDataObject) => ({
-					name: `${item.description || item.name} (${item.inputType})`,
-					value: String(item.name),
-				}));
+				return (response as IDataObject[])
+					.filter((item: IDataObject) => item.protected === false)
+					.map((item: IDataObject) => ({
+						name: `${item.description || item.name} (${mapFieldType(item.inputType as string)})`,
+						value: String(item.name),
+					}));
 			},
 
 			// RPC: listCustomModuleItems — records dropdown
@@ -240,10 +246,12 @@ export class Boostspace implements INodeType {
 				const response = await boostspaceApiRequest.call(
 					this, 'GET', `/api/custom-field/of/custom-module-item/${entityId}`,
 				);
-				return (response as IDataObject[]).map((item: IDataObject) => ({
-					name: `${item.description || item.name} (${item.inputType})`,
-					value: String(item.id),
-				}));
+				return (response as IDataObject[])
+					.filter((item: IDataObject) => item.protected === false)
+					.map((item: IDataObject) => ({
+						name: `${item.description || item.name} (${mapFieldType(item.inputType as string)})`,
+						value: String(item.id),
+					}));
 			},
 
 			// RPC: subListLabelOfCustomModule — nested sub-labels of a module
@@ -317,13 +325,22 @@ export class Boostspace implements INodeType {
 					} else if (operation === 'getByRemoteId') {
 						const remoteId = this.getNodeParameter('remoteId', i) as string;
 						const remoteApp = this.getNodeParameter('remoteApplication', i) as string;
-						const result = await boostspaceApiRequest.call(
-							this, 'GET', `/api/custom-module-item/remote/${encodeURIComponent(remoteId)}/${encodeURIComponent(remoteApp)}`,
-						);
-						if (Array.isArray(result)) {
-							responseData = (result as IDataObject[]).map(flattenCustomFields);
-						} else {
-							responseData = flattenCustomFields(result as IDataObject);
+						try {
+							const result = await boostspaceApiRequest.call(
+								this, 'GET', `/api/custom-module-item/remote/${encodeURIComponent(remoteId)}/${encodeURIComponent(remoteApp)}`,
+							);
+							if (Array.isArray(result)) {
+								responseData = (result as IDataObject[]).map(flattenCustomFields);
+							} else {
+								responseData = flattenCustomFields(result as IDataObject);
+							}
+						} catch (error) {
+							const err = error as any;
+							if (err.httpCode === '404' || err.message?.includes('404') || err.description?.includes('not found')) {
+								responseData = { found: false, remoteId, remoteApplication: remoteApp, message: `Record not found for remote ID '${remoteId}' in application '${remoteApp}'` };
+							} else {
+								throw error;
+							}
 						}
 
 					} else if (operation === 'getMany') {
@@ -346,17 +363,31 @@ export class Boostspace implements INodeType {
 						const customModuleId = this.getNodeParameter('customModuleId', i) as number;
 						const recordId = this.getNodeParameter('customModuleItemId', i) as number;
 						const customFieldsRaw = this.getNodeParameter('customFieldsValues', i) as IDataObject;
-						const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
 						const customFields = parseCustomFieldsInput(customFieldsRaw);
 
 						const body: IDataObject = {};
 						if (Object.keys(customFields).length > 0) {
 							body.customFieldsValues = customFieldsToApiFormat(customFields);
 						}
-						if (additionalFields.spaceId) body.spaceId = additionalFields.spaceId;
-						if (additionalFields.statusId) body.statusId = additionalFields.statusId;
-						if (additionalFields.statusSystemId) body.statusSystemId = additionalFields.statusSystemId;
-						if (additionalFields.labels) body.labels = additionalFields.labels;
+
+						// System fields (directly visible in the UI)
+						const updateSpaceId = this.getNodeParameter('updateSpaceId', i, '') as string | number;
+						const updateStatusSystemId = this.getNodeParameter('updateStatusSystemId', i, '') as string | number;
+						const updateStatusId = this.getNodeParameter('updateStatusId', i, 0) as number;
+						const updateLabels = this.getNodeParameter('updateLabels', i, []) as number[];
+
+						if (updateSpaceId) body.spaceId = updateSpaceId;
+						if (updateStatusSystemId) body.statusSystemId = updateStatusSystemId;
+						if (updateStatusId) body.statusId = updateStatusId;
+						if (updateLabels.length > 0) body.labels = updateLabels;
+
+						if (Object.keys(body).length === 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'At least one field must be provided to update the record. Set a custom field, Space, Status System, Status ID, or Labels.',
+								{ itemIndex: i },
+							);
+						}
 
 						const result = await boostspaceApiRequest.call(
 							this, 'PUT', `/api/custom-module-item/${recordId}?customModuleId=${customModuleId}`, body,
@@ -506,11 +537,23 @@ export class Boostspace implements INodeType {
 						) as IDataObject;
 
 					} else if (operation === 'getMany') {
-						const spaceId = this.getNodeParameter('spaceId', i) as number;
+						const spaceIdRaw = this.getNodeParameter('spaceId', i) as string | number;
+						const spaceId = Number(spaceIdRaw);
+						if (!spaceIdRaw || Number.isNaN(spaceId)) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid Space: "${spaceIdRaw}". Pick a space from the dropdown or provide a numeric space ID via an expression.`,
+								{ itemIndex: i },
+							);
+						}
 						const result = await boostspaceApiRequest.call(
 							this, 'GET', `/api/custom-field/by-space/${spaceId}`,
 						);
-						responseData = Array.isArray(result) ? result as IDataObject[] : result as IDataObject;
+						if (Array.isArray(result) && result.length === 0) {
+							responseData = { message: `No fields found for space ${spaceId}. The space may not exist or has no custom fields.` };
+						} else {
+							responseData = Array.isArray(result) ? result as IDataObject[] : result as IDataObject;
+						}
 
 					} else if (operation === 'update') {
 						const fieldId = this.getNodeParameter('customFieldInputId', i) as number;

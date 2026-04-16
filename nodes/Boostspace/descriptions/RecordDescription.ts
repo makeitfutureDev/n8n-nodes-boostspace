@@ -139,53 +139,46 @@ export const recordFields: INodeProperties[] = [
 		description: 'Name of the source application for this remote ID (e.g. Shopify)',
 	},
 
-	// ------ Additional Fields for update ------
+	// ------ System Fields for update ------
 	{
-		displayName: 'Additional Fields',
-		name: 'additionalFields',
-		type: 'collection',
-		placeholder: 'Add Field',
+		displayName: 'Space Name or ID',
+		name: 'updateSpaceId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'getSpaces',
+			loadOptionsDependsOn: ['customModuleId'],
+		},
 		displayOptions: { show: { resource: ['record'], operation: ['update'] } },
-		default: {},
-		options: [
-			{
-				displayName: 'Space Name or ID',
-				name: 'spaceId',
-				type: 'options',
-				typeOptions: {
-					loadOptionsMethod: 'getSpaces',
-					loadOptionsDependsOn: ['customModuleId'],
-				},
-				default: '',
-				description: 'The space for the record. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-			},
-			{
-				displayName: 'Status ID',
-				name: 'statusId',
-				type: 'number',
-				default: 0,
-				description: 'The status ID to set on the record',
-			},
-			{
-				displayName: 'Status System Name or ID',
-				name: 'statusSystemId',
-				type: 'options',
-				typeOptions: { loadOptionsMethod: 'getStatusSystems' },
-				default: '',
-				description: 'The status system for the record. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-			},
-			{
-				displayName: 'Label Names or IDs',
-				name: 'labels',
-				type: 'multiOptions',
-				typeOptions: {
-					loadOptionsMethod: 'getLabels',
-					loadOptionsDependsOn: ['spaceId'],
-				},
-				default: [],
-				description: 'Label IDs to attach to the record. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-			},
-		],
+		default: '',
+		description: 'Move record to a different space. Leave empty to keep current. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+	},
+	{
+		displayName: 'Status System Name or ID',
+		name: 'updateStatusSystemId',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getStatusSystems' },
+		displayOptions: { show: { resource: ['record'], operation: ['update'] } },
+		default: '',
+		description: 'Change the status system. Leave empty to keep current. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+	},
+	{
+		displayName: 'Status ID',
+		name: 'updateStatusId',
+		type: 'number',
+		displayOptions: { show: { resource: ['record'], operation: ['update'] } },
+		default: 0,
+		description: 'The status ID to set on the record. Leave 0 to keep current.',
+	},
+	{
+		displayName: 'Label Names or IDs',
+		name: 'updateLabels',
+		type: 'multiOptions',
+		typeOptions: {
+			loadOptionsMethod: 'getLabels',
+		},
+		displayOptions: { show: { resource: ['record'], operation: ['update'] } },
+		default: [],
+		description: 'Labels to attach to the record. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 	},
 
 	// ------ Additional Fields for sync ------

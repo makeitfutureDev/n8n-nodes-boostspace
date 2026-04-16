@@ -27,6 +27,7 @@ export async function boostspaceApiRequest(
 	const baseUrl = `https://${credentials.syskey}.boost.space`;
 
 	const hasBody = Array.isArray(body) ? body.length > 0 : Object.keys(body).length > 0;
+	const isWriteMethod = ['POST', 'PUT', 'PATCH'].includes(method);
 
 	const options: IHttpRequestOptions = {
 		method,
@@ -38,9 +39,13 @@ export async function boostspaceApiRequest(
 		qs,
 	};
 
-	// Manually stringify body to ensure exact JSON is sent
+	// Always send body for write methods, even if empty
 	if (hasBody) {
-		options.body = JSON.stringify(body);
+		options.body = body;
+	} else if (isWriteMethod) {
+		// n8n httpRequest skips empty objects, so we need a non-empty placeholder
+		// Sending as string ensures it reaches the server
+		options.body = '{}';
 	}
 
 	if (Object.keys(qs).length === 0) {
@@ -124,7 +129,7 @@ export function flattenCustomFields(record: IDataObject): IDataObject {
 			}
 		}
 	}
-	return result;
+	return parseDateFields(result);
 }
 
 /**
@@ -200,6 +205,49 @@ export function getWebhookConfig(eventType: string): IWebhookConfig {
 		moduleCud: { module: 'custom-module', events: ['CREATE', 'UPDATE', 'DELETE'] },
 	};
 	return configs[eventType] ?? { module: 'custom-module-item', events: ['CREATE'] };
+}
+
+/**
+ * Map Boost.space field inputType to a user-friendly type label.
+ * Port of Make.com's type mapping from listCustomFields RPC.
+ */
+export function mapFieldType(inputType: string): string {
+	const typeMap: Record<string, string> = {
+		text: 'Text',
+		number: 'Integer',
+		float: 'Float',
+		date: 'Date',
+		datetime: 'Date & Time',
+		select: 'Select',
+		multiselect: 'Multi-Select',
+		checkbox: 'Boolean',
+		url: 'URL',
+		wysiwyg: 'Rich Text',
+		rating: 'Rating',
+		file: 'File',
+	};
+	return typeMap[inputType] || inputType;
+}
+
+/**
+ * Parse date fields in API response to ISO 8601 format.
+ * Port of Make.com's outputFormat date parsing.
+ */
+export function parseDateFields(record: IDataObject): IDataObject {
+	const dateFields = ['created', 'updated'];
+	for (const field of dateFields) {
+		if (record[field] && typeof record[field] === 'string') {
+			try {
+				const parsed = new Date(record[field] as string);
+				if (!isNaN(parsed.getTime())) {
+					record[field] = parsed.toISOString();
+				}
+			} catch {
+				// Keep original value if parsing fails
+			}
+		}
+	}
+	return record;
 }
 
 /**
