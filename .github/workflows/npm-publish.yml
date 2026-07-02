@@ -30,14 +30,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Diagnose npm auth
-        run: |
-          echo "token length in CI: ${#NODE_AUTH_TOKEN}"
-          echo "--- whoami ---"
-          npm whoami || echo "whoami FAILED"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Publish
         run: npm publish --access public --provenance
         env:
