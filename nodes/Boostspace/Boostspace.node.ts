@@ -18,7 +18,6 @@ import {
 	formatBulkRecords,
 	mapFieldType,
 	parseCustomFieldsInput,
-	parseDateFields,
 	processBulkResponse,
 } from './GenericFunctions';
 

@@ -115,6 +115,7 @@ export class BoostspaceTrigger implements INodeType {
 							this, 'DELETE', `/api/automatization/action/${actionId}`,
 						);
 					} catch (error) {
+						this.logger.error('Boost.space: failed to delete webhook action', { error });
 						return false;
 					}
 					delete webhookData.externalHookId;
